@@ -1,0 +1,50 @@
+version: '3'                               
+
+services:
+
+  zipkin:                                  
+    image: openzipkin/zipkin               
+    ports:
+      - "9411:9411"                         # Expone la UI/API de Zipkin en http://localhost:9411
+    networks:
+      microservices_network:                # Conecta a la red 'microservices_network'
+        aliases:
+          - zipkin                          
+
+  service-discovery-container:              # Servicio de descubrimiento (Eureka Server)
+    image: selimhorri/service-discovery-ecommerce-boot:0.1.0
+    ports:
+      - "8761:8761"                         # Panel/endpoint de Eureka en http://localhost:8761
+    networks:
+      microservices_network:
+        aliases:
+          - service-discovery-container     # Alias DNS para que los clientes apunten aquí
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev          # Perfil de Spring
+      - SPRING_ZIPKIN_BASE_URL=http://zipkin:9411            # Reporter de trazas hacia Zipkin
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://cloud-config-container:9296/  # Importa config remota
+
+  cloud-config-container:                   # Spring Cloud Config Server
+    image: selimhorri/cloud-config-ecommerce-boot:0.1.0
+    ports:
+      - "9296:9296"                         # Config Server en http://localhost:9296
+    networks:
+      microservices_network:
+        aliases:
+          - cloud-config-container          # Alias para que los clientes resuelvan el Config Server
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev          # Perfil de Spring
+      - SPRING_ZIPKIN_BASE_URL=http://zipkin:9411            # Envía trazas a Zipkin
+      - EUREKA_CLIENT_REGION=default        # Región lógica de Eureka
+      
+      #Eureka
+
+      - EUREKA_CLIENT_AVAILABILITY_ZONES_DEFAULT=myzone
+      - EUREKA_CLIENT_AVAILABILITYZONES_DEFAULT=myzone
+      - EUREKA_CLIENT_SERVICEURL_MYZONE=http://service-discovery-container:8761/eureka  # URL de Eureka para zona 'myzone'
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://service-discovery-container:8761/eureka/ # URL por defecto de Eureka
+
+networks:
+  microservices_network:                    # Declaración de la red usada por los servicios
+    name: microservices_network             # Nombre real de la red en Docker
+    driver: bridge                          # Driver 'bridge' (red de usuario en el host)
