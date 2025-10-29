@@ -1,0 +1,46 @@
+{# Detecta el grupo CI/ci #}
+{% set ci_group = 'CI' if 'CI' in groups else ('ci' if 'ci' in groups else None) %}
+
+{# Toma el primer host del grupo, si existe #}
+{% set ci_inv = (groups[ci_group][0] if ci_group and groups[ci_group]|length > 0 else None) %}
+
+{# Resuelve la IP/host: usa ansible_host si existe, si no el nombre del host, si no 127.0.0.1 #}
+{% set ci_host = (hostvars[ci_inv].ansible_host | default(ci_inv, true)) if ci_inv else '127.0.0.1' %}
+
+server {
+    listen 80;
+    server_name _;
+
+    # Redirige la raíz a SonarQube bajo /sonar/
+    location / {
+        return 302 /sonar/;
+    }
+
+    # Proxy a SonarQube bajo /sonar/
+    location /sonar/ {
+        proxy_set_header X-Forwarded-Prefix /sonar;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header Host $host;
+        proxy_read_timeout 300;
+        proxy_pass http://{{ ci_host }}:9000/sonar/;  # apunta al host del grupo CI
+        proxy_redirect off;
+    }
+}
+
+server {
+    listen 8089;
+    server_name _;
+
+    location / {
+        proxy_pass http://{{ ci_host }}:8089/;  # ejemplo de otro servicio que corre en el host CI
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300;
+        proxy_redirect off;
+    }
+}
